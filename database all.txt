@@ -1,0 +1,800 @@
+-- Extensions
+create extension if not exists pgcrypto;
+
+-- 1) Admin whitelist table
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+-- Helper: check admin
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.admin_users au where au.user_id = auth.uid()
+  );
+$$;
+
+-- 2) Enum status aspirasi
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'aspirasi_status') then
+    create type public.aspirasi_status as enum
+      ('Masuk','Diverifikasi','Diteruskan','Diproses','Selesai','Ditolak');
+  end if;
+end$$;
+
+-- 3) Ticket sequence + generator
+create sequence if not exists public.aspirasi_ticket_seq start 1;
+
+create or replace function public.generate_ticket_code()
+returns text
+language sql
+as $$
+  select 'BDG-' || lpad(nextval('public.aspirasi_ticket_seq')::text, 6, '0');
+$$;
+
+-- 4) Table aspirasi (PRIVATE base table)
+create table if not exists public.aspirasi (
+  id uuid primary key default gen_random_uuid(),
+  ticket_code text unique not null default public.generate_ticket_code(),
+
+  kategori text not null,
+  lokasi text not null,
+  isi text not null,
+
+  -- data pelapor (SENSITIF: jangan ditampilkan publik)
+  nama text,
+  kontak text,
+
+  status public.aspirasi_status not null default 'Masuk',
+  catatan_admin text,
+
+  is_public boolean not null default true,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- updated_at trigger
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_aspirasi_updated_at on public.aspirasi;
+create trigger trg_aspirasi_updated_at
+before update on public.aspirasi
+for each row execute function public.touch_updated_at();
+
+-- 5) Public view (AMAN untuk publik)
+create or replace view public.aspirasi_public as
+select
+  ticket_code,
+  kategori,
+  lokasi,
+  status,
+  updated_at,
+  created_at
+from public.aspirasi
+where is_public = true;
+
+-- 6) Table kinerja
+create table if not exists public.kinerja (
+  id uuid primary key default gen_random_uuid(),
+  tanggal date not null,
+  kategori text not null,
+  tag text,
+  judul text not null,
+  lokasi text,
+  ringkasan text,
+  sources jsonb not null default '[]'::jsonb, -- array of {label,url}
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists trg_kinerja_updated_at on public.kinerja;
+create trigger trg_kinerja_updated_at
+before update on public.kinerja
+for each row execute function public.touch_updated_at();
+
+-- =========================
+-- RLS
+-- =========================
+alter table public.aspirasi enable row level security;
+alter table public.kinerja enable row level security;
+alter table public.admin_users enable row level security;
+
+-- admin_users: hanya admin yang bisa lihat list admin (opsional)
+drop policy if exists "admin_users_select_admin" on public.admin_users;
+create policy "admin_users_select_admin"
+on public.admin_users
+for select
+to authenticated
+using (public.is_admin());
+
+-- Aspirasi:
+-- 1) publik boleh INSERT (kirim aspirasi)
+drop policy if exists "aspirasi_insert_public" on public.aspirasi;
+create policy "aspirasi_insert_public"
+on public.aspirasi
+for insert
+to anon, authenticated
+with check (true);
+
+-- 2) publik TIDAK boleh select base table (biar tidak bocor nama/kontak)
+-- jadi: jangan bikin policy SELECT untuk anon di base table.
+
+-- 3) admin boleh SELECT/UPDATE/DELETE base table
+drop policy if exists "aspirasi_select_admin" on public.aspirasi;
+create policy "aspirasi_select_admin"
+on public.aspirasi
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "aspirasi_update_admin" on public.aspirasi;
+create policy "aspirasi_update_admin"
+on public.aspirasi
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "aspirasi_delete_admin" on public.aspirasi;
+create policy "aspirasi_delete_admin"
+on public.aspirasi
+for delete
+to authenticated
+using (public.is_admin());
+
+-- View aspirasi_public: izinkan SELECT ke publik
+-- (views pakai permission underlying, jadi kita kasih policy SELECT yang aman via view: pakai SECURITY INVOKER default)
+-- Cara praktis di Supabase: grant select on view to anon/authenticated
+grant select on public.aspirasi_public to anon, authenticated;
+
+-- Kinerja:
+-- publik boleh SELECT
+drop policy if exists "kinerja_select_public" on public.kinerja;
+create policy "kinerja_select_public"
+on public.kinerja
+for select
+to anon, authenticated
+using (true);
+
+-- admin boleh insert/update/delete
+drop policy if exists "kinerja_insert_admin" on public.kinerja;
+create policy "kinerja_insert_admin"
+on public.kinerja
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "kinerja_update_admin" on public.kinerja;
+create policy "kinerja_update_admin"
+on public.kinerja
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "kinerja_delete_admin" on public.kinerja;
+create policy "kinerja_delete_admin"
+on public.kinerja
+for delete
+to authenticated
+using (public.is_admin());
+
+
+-- =========================================
+-- TABLE: reses
+-- =========================================
+create table if not exists public.reses (
+  id uuid primary key default gen_random_uuid(),
+  tahun int not null,
+  masa smallint not null check (masa between 1 and 3),
+  label text not null,
+  start_date date null,
+  end_date date null,
+  lokasi text null,
+  agenda_url text null,
+  catatan text null,
+  sources jsonb not null default '[]'::jsonb, -- array [{label,url}]
+  is_published boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists reses_unique_year_masa
+on public.reses (tahun, masa);
+
+-- auto update updated_at
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_reses_updated_at on public.reses;
+create trigger trg_reses_updated_at
+before update on public.reses
+for each row execute function public.set_updated_at();
+
+-- =========================================
+-- ADMIN CHECK (pakai tabel admin_users yg kamu sudah pakai)
+-- admin_users minimal punya kolom: user_id uuid unique
+-- =========================================
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.admin_users au
+    where au.user_id = auth.uid()
+  );
+$$;
+
+
+-- =========================================
+-- RLS
+-- =========================================
+alter table public.reses enable row level security;
+
+-- Public read: hanya yang publish
+drop policy if exists "Public can read published reses" on public.reses;
+create policy "Public can read published reses"
+on public.reses
+for select
+to anon, authenticated
+using (is_published = true);
+
+-- Admin full access
+drop policy if exists "Admin can insert reses" on public.reses;
+create policy "Admin can insert reses"
+on public.reses
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admin can update reses" on public.reses;
+create policy "Admin can update reses"
+on public.reses
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Admin can delete reses" on public.reses;
+create policy "Admin can delete reses"
+on public.reses
+for delete
+to authenticated
+using (public.is_admin());
+
+========================================================================================
+
+-- Public read untuk bucket reses
+drop policy if exists "Public can read reses images" on storage.objects;
+create policy "Public can read reses images"
+on storage.objects
+for select
+to anon, authenticated
+using (bucket_id = 'reses');
+
+-- Admin insert
+drop policy if exists "Admin can upload reses images" on storage.objects;
+create policy "Admin can upload reses images"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'reses' and public.is_admin());
+
+-- Admin update (optional, untuk replace file)
+drop policy if exists "Admin can update reses images" on storage.objects;
+create policy "Admin can update reses images"
+on storage.objects
+for update
+to authenticated
+using (bucket_id = 'reses' and public.is_admin())
+with check (bucket_id = 'reses' and public.is_admin());
+
+-- Admin delete (optional)
+drop policy if exists "Admin can delete reses images" on storage.objects;
+create policy "Admin can delete reses images"
+on storage.objects
+for delete
+to authenticated
+using (bucket_id = 'reses' and public.is_admin());
+
+=============================================================================
+
+Install dependency (buat animasi + chart)
+
+Jalankan:
+
+npm i framer-motion recharts
+
+
+===============================================================================
+
+-- 1) Kolom tambahan untuk reses (gambar + caption + status)
+alter table public.reses
+  add column if not exists status text default 'Belum',
+  add column if not exists judul text,
+  add column if not exists lokasi text,
+  add column if not exists ringkasan text,
+  add column if not exists foto_path text,
+  add column if not exists foto_url text,
+  add column if not exists foto_caption text,
+  add column if not exists aduan_masuk int default 0,
+  add column if not exists aduan_selesai int default 0,
+  add column if not exists sources jsonb default '[]'::jsonb;
+
+-- 2) Pastikan unique constraint tahun+masa memang ada
+-- (kalau kamu sudah punya "reses_unique_year_masa", ini bisa di-skip)
+create unique index if not exists reses_unique_year_masa
+on public.reses (tahun, masa);
+
+-- 3) Trigger updated_at (kalau belum ada)
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_reses_updated_at on public.reses;
+create trigger trg_reses_updated_at
+before update on public.reses
+for each row execute function public.set_updated_at();
+
+-- 4) RLS (public boleh lihat reses, admin yang bisa insert/update/delete)
+alter table public.reses enable row level security;
+
+drop policy if exists "reses_select_public" on public.reses;
+create policy "reses_select_public"
+on public.reses for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "reses_admin_all" on public.reses;
+create policy "reses_admin_all"
+on public.reses for all
+to authenticated
+using (is_admin())
+with check (is_admin());
+
+====================================================================================
+
+-- 1) Kolom tambahan untuk reses (kalau belum ada)
+alter table if exists public.reses
+  add column if not exists tahun int,
+  add column if not exists masa int,
+  add column if not exists label text,
+  add column if not exists status text default 'Terjadwal',
+  add column if not exists tanggal_mulai date,
+  add column if not exists tanggal_selesai date,
+  add column if not exists lokasi text,
+  add column if not exists laporan text,
+  add column if not exists foto_url text,
+  add column if not exists foto_caption text;
+
+-- 2) Pastikan unique tahun+masa ada (nama constraint kamu sudah ada, ini buat jaga-jaga)
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'reses_unique_year_masa'
+  ) then
+    alter table public.reses
+      add constraint reses_unique_year_masa unique (tahun, masa);
+  end if;
+end $$;
+
+-- 3) Trigger updated_at (kalau kamu punya updated_at)
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  if new.updated_at is not null then
+    new.updated_at = now();
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='reses' and column_name='updated_at'
+  ) then
+    drop trigger if exists trg_reses_updated_at on public.reses;
+    create trigger trg_reses_updated_at
+    before update on public.reses
+    for each row execute function public.set_updated_at();
+  end if;
+end $$;
+
+-- 4) STORAGE: bucket untuk gambar reses (jalankan sekali)
+insert into storage.buckets (id, name, public)
+values ('reses-images', 'reses-images', true)
+on conflict (id) do nothing;
+
+-- 5) RLS storage policies (contoh minimal)
+-- Public read
+drop policy if exists "public read reses-images" on storage.objects;
+create policy "public read reses-images"
+on storage.objects for select
+to public
+using (bucket_id = 'reses-images');
+
+-- Admin write (ganti is_admin() sesuai punyamu)
+-- Kalau kamu sudah punya function is_admin() dari tabel admin_users, pakai itu.
+drop policy if exists "admin write reses-images" on storage.objects;
+create policy "admin write reses-images"
+on storage.objects for all
+to authenticated
+using (bucket_id='reses-images' and public.is_admin())
+with check (bucket_id='reses-images' and public.is_admin());
+
+=======================================================================================
+
+do $$
+declare
+  idx_exists boolean;
+  idx_is_unique boolean;
+begin
+  -- cek apakah index bernama reses_unique_year_masa sudah ada
+  select exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = 'reses_unique_year_masa'
+      and c.relkind = 'i'
+  ) into idx_exists;
+
+  -- kalau index ada, cek dia unique atau bukan
+  if idx_exists then
+    select i.indisunique
+    into idx_is_unique
+    from pg_index i
+    join pg_class c on c.oid = i.indexrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = 'reses_unique_year_masa';
+  end if;
+
+  -- kalau index belum ada -> buat unique index
+  if not idx_exists then
+    execute 'create unique index reses_unique_year_masa on public.reses (tahun, masa)';
+  elsif idx_exists and not coalesce(idx_is_unique, false) then
+    raise exception 'Index reses_unique_year_masa sudah ada tapi BUKAN unique. Hapus/rename index itu dulu atau ganti nama index baru.';
+  end if;
+
+  -- kalau constraint belum ada -> bikin constraint pakai index yang sudah ada (tidak bikin relation/index baru)
+  if not exists (select 1 from pg_constraint where conname = 'reses_unique_year_masa') then
+    execute 'alter table public.reses add constraint reses_unique_year_masa unique using index reses_unique_year_masa';
+  end if;
+
+end $$;
+
+=============================================================================================================================================
+
+-- 1) Tambah kolom relasi ke reses (kalau belum ada)
+alter table public.aspirasi
+add column if not exists reses_id uuid references public.reses(id) on delete set null;
+
+create index if not exists aspirasi_reses_id_idx on public.aspirasi(reses_id);
+
+-- 2) Helper: hitung ulang counter aduan di tabel reses
+create or replace function public.recalc_reses_aduan_counts(_reses_id uuid)
+returns void
+language plpgsql
+as $$
+begin
+  update public.reses r
+  set
+    aduan_masuk = (select count(*) from public.aspirasi a where a.reses_id = _reses_id),
+    aduan_selesai = (select count(*) from public.aspirasi a where a.reses_id = _reses_id and a.status = 'Selesai'),
+    updated_at = now()
+  where r.id = _reses_id;
+end;
+$$;
+
+-- 3) Trigger: setiap insert/update/delete aspirasi, counter reses ikut update
+create or replace function public.trg_aspirasi_reses_counts()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (tg_op = 'INSERT') then
+    if new.reses_id is not null then
+      perform public.recalc_reses_aduan_counts(new.reses_id);
+    end if;
+    return new;
+
+  elsif (tg_op = 'UPDATE') then
+    if old.reses_id is distinct from new.reses_id then
+      if old.reses_id is not null then
+        perform public.recalc_reses_aduan_counts(old.reses_id);
+      end if;
+      if new.reses_id is not null then
+        perform public.recalc_reses_aduan_counts(new.reses_id);
+      end if;
+    else
+      -- reses_id sama, tapi status berubah -> hitung ulang
+      if new.reses_id is not null and (old.status is distinct from new.status) then
+        perform public.recalc_reses_aduan_counts(new.reses_id);
+      end if;
+    end if;
+    return new;
+
+  elsif (tg_op = 'DELETE') then
+    if old.reses_id is not null then
+      perform public.recalc_reses_aduan_counts(old.reses_id);
+    end if;
+    return old;
+  end if;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists aspirasi_reses_counts on public.aspirasi;
+
+create trigger aspirasi_reses_counts
+after insert or update or delete on public.aspirasi
+for each row execute function public.trg_aspirasi_reses_counts();
+
+================================================================================
+
+-- Izinkan publik (anon) membaca file di bucket 'reses'
+create policy "Public read reses"
+on storage.objects
+for select
+to anon
+using (bucket_id = 'reses');
+
+======================================================================
+
+-- Tambahkan tabel reses ke realtime publication
+alter publication supabase_realtime add table public.reses;
+
+
+=====================================================================
+
+alter publication supabase_realtime add table public.kinerja;
+
+=================================================================
+
+alter publication supabase_realtime add table public.aspirasi_public;
+
+=================================================================
+
+-- aktifkan RLS kalau belum
+alter table public.reses enable row level security;
+
+-- policy publik boleh baca yang is_published=true
+drop policy if exists "Public can read published reses" on public.reses;
+
+create policy "Public can read published reses"
+on public.reses
+for select
+to anon, authenticated
+using (is_published = true);
+
+=================================================================
+
+-- Extensions
+create extension if not exists pgcrypto;
+
+-- 1) Admin whitelist table
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+-- Helper: check admin
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.admin_users au where au.user_id = auth.uid()
+  );
+$$;
+
+-- 2) Enum status aspirasi
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'aspirasi_status') then
+    create type public.aspirasi_status as enum
+      ('Masuk','Diverifikasi','Diteruskan','Diproses','Selesai','Ditolak');
+  end if;
+end$$;
+
+-- 3) Ticket sequence + generator
+create sequence if not exists public.aspirasi_ticket_seq start 1;
+
+create or replace function public.generate_ticket_code()
+returns text
+language sql
+as $$
+  select 'BDG-' || lpad(nextval('public.aspirasi_ticket_seq')::text, 6, '0');
+$$;
+
+-- 4) Table aspirasi (PRIVATE base table)
+create table if not exists public.aspirasi (
+  id uuid primary key default gen_random_uuid(),
+  ticket_code text unique not null default public.generate_ticket_code(),
+
+  kategori text not null,
+  lokasi text not null,
+  isi text not null,
+
+  -- data pelapor (SENSITIF: jangan ditampilkan publik)
+  nama text,
+  kontak text,
+
+  status public.aspirasi_status not null default 'Masuk',
+  catatan_admin text,
+
+  is_public boolean not null default true,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- updated_at trigger
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_aspirasi_updated_at on public.aspirasi;
+create trigger trg_aspirasi_updated_at
+before update on public.aspirasi
+for each row execute function public.touch_updated_at();
+
+-- 5) Public view (AMAN untuk publik)
+create or replace view public.aspirasi_public as
+select
+  ticket_code,
+  kategori,
+  lokasi,
+  status,
+  updated_at,
+  created_at
+from public.aspirasi
+where is_public = true;
+
+-- 6) Table kinerja
+create table if not exists public.kinerja (
+  id uuid primary key default gen_random_uuid(),
+  tanggal date not null,
+  kategori text not null,
+  tag text,
+  judul text not null,
+  lokasi text,
+  ringkasan text,
+  sources jsonb not null default '[]'::jsonb, -- array of {label,url}
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists trg_kinerja_updated_at on public.kinerja;
+create trigger trg_kinerja_updated_at
+before update on public.kinerja
+for each row execute function public.touch_updated_at();
+
+-- =========================
+-- RLS
+-- =========================
+alter table public.aspirasi enable row level security;
+alter table public.kinerja enable row level security;
+alter table public.admin_users enable row level security;
+
+-- admin_users: hanya admin yang bisa lihat list admin (opsional)
+drop policy if exists "admin_users_select_admin" on public.admin_users;
+create policy "admin_users_select_admin"
+on public.admin_users
+for select
+to authenticated
+using (public.is_admin());
+
+-- Aspirasi:
+-- 1) publik boleh INSERT (kirim aspirasi)
+drop policy if exists "aspirasi_insert_public" on public.aspirasi;
+create policy "aspirasi_insert_public"
+on public.aspirasi
+for insert
+to anon, authenticated
+with check (true);
+
+-- 2) publik TIDAK boleh select base table (biar tidak bocor nama/kontak)
+-- jadi: jangan bikin policy SELECT untuk anon di base table.
+
+-- 3) admin boleh SELECT/UPDATE/DELETE base table
+drop policy if exists "aspirasi_select_admin" on public.aspirasi;
+create policy "aspirasi_select_admin"
+on public.aspirasi
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "aspirasi_update_admin" on public.aspirasi;
+create policy "aspirasi_update_admin"
+on public.aspirasi
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "aspirasi_delete_admin" on public.aspirasi;
+create policy "aspirasi_delete_admin"
+on public.aspirasi
+for delete
+to authenticated
+using (public.is_admin());
+
+-- View aspirasi_public: izinkan SELECT ke publik
+-- (views pakai permission underlying, jadi kita kasih policy SELECT yang aman via view: pakai SECURITY INVOKER default)
+-- Cara praktis di Supabase: grant select on view to anon/authenticated
+grant select on public.aspirasi_public to anon, authenticated;
+
+-- Kinerja:
+-- publik boleh SELECT
+drop policy if exists "kinerja_select_public" on public.kinerja;
+create policy "kinerja_select_public"
+on public.kinerja
+for select
+to anon, authenticated
+using (true);
+
+-- admin boleh insert/update/delete
+drop policy if exists "kinerja_insert_admin" on public.kinerja;
+create policy "kinerja_insert_admin"
+on public.kinerja
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "kinerja_update_admin" on public.kinerja;
+create policy "kinerja_update_admin"
+on public.kinerja
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "kinerja_delete_admin" on public.kinerja;
+create policy "kinerja_delete_admin"
+on public.kinerja
+for delete
+to authenticated
+using (public.is_admin());
+
+

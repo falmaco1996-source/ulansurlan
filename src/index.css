@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Sedikit perapihan default */
+:root {
+  color-scheme: light;
+
+  /* PKB-ish palette */
+  --pkb-green: #007744;
+  --pkb-green-dark: #005a32;
+  --pkb-yellow: #fff212;
+  --pkb-soft: #eaf7ef;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+/* Biar seleksi teks ada aksen kuning */
+::selection {
+  background: var(--pkb-yellow);
+  color: var(--pkb-green-dark);
+}

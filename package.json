@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -25,11 +28,6 @@
     "vite": "^5.4.10"
   },
   "optionalDependencies": {
-  "@rollup/rollup-linux-x64-gnu": "4.53.5"
-}
-{
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "*"
+    "@rollup/rollup-linux-x64-gnu": "4.53.5"
   }
-}
 }

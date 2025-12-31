@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -22,11 +22,14 @@ import {
  *  TENTANG.jsx — PKB Themed (lebih eye-catching + foto)
  *  - Warna PKB lebih kuat (green/yellow)
  *  - Slideshow: crossfade + Ken Burns + progress + thumbnails
- *  - Foto: multi-source fallback (kalau 1 rusak, coba src berikutnya)
+ *  - Foto: pakai upload kamu (01..06)
  *  - Animasi: otomatis mati kalau prefers-reduced-motion
+ *
+ *  UPDATE: "Galeri Foto" DIHAPUS karena sudah ada di menu Media.
+ *  Diganti rubrik: Program & Prioritas + Timeline + FAQ + Stat.
  * =========================================================
  *
- * FOTO KAMU (sesuai upload):
+ * FOTO KAMU:
  *  /public/galeri/01.jpg  (podium)
  *  /public/galeri/02.webp (portrait PKB)
  *  /public/galeri/03.jpg  (rapat closeup)
@@ -119,9 +122,7 @@ function SmartImage({
           <div className="mx-auto mb-2 grid h-11 w-11 place-items-center rounded-2xl bg-white/70 shadow-sm ring-1 ring-black/5">
             <Sparkles className="h-5 w-5 text-[#005A32]" />
           </div>
-          <div className="text-xs font-semibold text-[#005A32]">
-            Foto belum tersedia
-          </div>
+          <div className="text-xs font-semibold text-[#005A32]">Foto belum tersedia</div>
           <div className="mt-1 text-[11px] text-black/55">
             Tambahkan di <span className="font-mono">/public/galeri/</span>
           </div>
@@ -171,6 +172,18 @@ function Card({ className = "", children }) {
   );
 }
 
+function SectionHeader({ title, desc, right }) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <div className="text-2xl font-semibold tracking-tight text-[#0a0a0a]">{title}</div>
+        {desc ? <div className="mt-1 text-sm text-black/65">{desc}</div> : null}
+      </div>
+      {right ? <div>{right}</div> : null}
+    </div>
+  );
+}
+
 function PrimaryButton({ onClick, children }) {
   return (
     <button
@@ -205,6 +218,39 @@ function YellowButton({ onClick, children }) {
       {children}
       <ArrowRight className="h-4 w-4" />
     </button>
+  );
+}
+
+/** Count-up kecil buat stat (aman & ringan) */
+function CountUp({ to = 0, suffix = "", className = "" }) {
+  const reduced = useReducedMotion();
+  const [val, setVal] = useState(0);
+
+  useEffect(() => {
+    if (reduced) {
+      setVal(to);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const dur = 800;
+
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setVal(Math.round(eased * to));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [to, reduced]);
+
+  return (
+    <span className={cn("tabular-nums", className)}>
+      {val}
+      {suffix}
+    </span>
   );
 }
 
@@ -258,9 +304,7 @@ function Slideshow({ slides }) {
               <div className="mt-3 text-xl font-semibold tracking-tight text-white sm:text-2xl">
                 {s.title}
               </div>
-              <div className="mt-1 text-sm text-white/90 sm:text-base">
-                {s.desc}
-              </div>
+              <div className="mt-1 text-sm text-white/90 sm:text-base">{s.desc}</div>
             </div>
           </div>
         ))}
@@ -299,7 +343,13 @@ function Slideshow({ slides }) {
               style={{ width: 120, height: 72 }}
               aria-label={`Pilih slide ${i + 1}`}
             >
-              <SmartImage srcs={s.srcs} alt={s.title} className="h-full w-full" rounded="rounded-2xl" overlay={false} />
+              <SmartImage
+                srcs={s.srcs}
+                alt={s.title}
+                className="h-full w-full"
+                rounded="rounded-2xl"
+                overlay={false}
+              />
               {i === active ? <div className="absolute inset-0 bg-black/10" /> : null}
             </button>
           ))}
@@ -322,11 +372,58 @@ function Slideshow({ slides }) {
   );
 }
 
+function FAQItem({ q, a, open, onToggle }) {
+  return (
+    <div className="rounded-2xl bg-white/80 ring-1 ring-black/5 shadow-sm">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-start justify-between gap-3 p-4 text-left"
+        aria-expanded={open}
+      >
+        <div>
+          <div className="text-sm font-semibold text-[#0a0a0a]">{q}</div>
+          <div className="mt-1 text-xs text-black/55">Klik untuk lihat jawaban</div>
+        </div>
+        <div
+          className={cn(
+            "mt-1 grid h-9 w-9 place-items-center rounded-2xl bg-[rgba(0,119,68,0.10)] text-[#007744] transition",
+            open ? "rotate-180" : "rotate-0"
+          )}
+        >
+          <ChevronDownIcon />
+        </div>
+      </button>
+
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-300 ease-out",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="overflow-hidden px-4 pb-4">
+          <div className="rounded-2xl bg-[rgba(234,247,239,0.7)] p-4 text-sm text-black/75">
+            {a}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** icon kecil supaya gak nambah import baru */
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 export default function Tentang() {
   const navigate = useNavigate();
   const reveal = useReveal();
 
-  // === PATH FOTO KAMU (langsung pakai nama file yang ada di /public/galeri) ===
+  // === PATH FOTO KAMU ===
   const IMG = useMemo(
     () => ({
       podium: "/galeri/01.jpg",
@@ -354,15 +451,14 @@ export default function Tentang() {
         "Cibeunying Kidul",
         "Sumur Bandung",
       ],
-      tagline:
-        "Kerja yang bisa dicek, data yang bisa ditelusuri, dan aspirasi yang ditangani dengan rapi.",
+      tagline: "Kerja yang bisa dicek, data yang bisa ditelusuri, dan aspirasi yang ditangani dengan rapi.",
       intro:
         "Halaman ini dibuat agar warga bisa mengenal profil singkat, fokus kerja, dan cara menyampaikan aspirasi. Nuansa visual mengikuti identitas hijau–kuning agar terasa PKB, tapi tetap modern dan bersih.",
     }),
     []
   );
 
-  // === SLIDESHOW (isi 4 slide pakai foto kamu) ===
+  // === SLIDESHOW ===
   const slides = useMemo(
     () => [
       {
@@ -426,7 +522,7 @@ export default function Tentang() {
         title: "Penguatan RW & kewilayahan",
         points: [
           "Pemetaan kebutuhan RW secara bertahap.",
-          "Dorong program yang benar-benar berbasis kebutuhan wilayah.",
+          "Dorong program berbasis kebutuhan wilayah.",
           "Perkuat peran RW sebagai pintu layanan warga.",
         ],
       },
@@ -454,51 +550,110 @@ export default function Tentang() {
 
   const flow = useMemo(
     () => [
+      { icon: MessagesSquare, title: "Masuk", desc: "Warga kirim aspirasi + kategori + lokasi + detail singkat." },
+      { icon: BadgeCheck, title: "Verifikasi", desc: "Cek kelengkapan, bukti/foto (kalau ada), dan urgensi." },
+      { icon: Building2, title: "Klasifikasi", desc: "Masuk isu RW/kelurahan/kota untuk rute tindak lanjut." },
+      { icon: ShieldCheck, title: "Kawal", desc: "Dihubungkan ke agenda/program/mitra terkait bila relevan." },
+      { icon: Sparkles, title: "Update", desc: "Status ditampilkan agar warga bisa memantau progresnya." },
+    ],
+    []
+  );
+
+  // === RUBRIK PENGGANTI GALLERY: PROGRAM & PRIORITAS ===
+  const priorities = useMemo(
+    () => [
       {
-        icon: MessagesSquare,
-        title: "Masuk",
-        desc: "Warga kirim aspirasi + kategori + lokasi + detail singkat.",
-      },
-      {
-        icon: BadgeCheck,
-        title: "Verifikasi",
-        desc: "Cek kelengkapan, bukti/foto (kalau ada), dan urgensi.",
-      },
-      {
-        icon: Building2,
-        title: "Klasifikasi",
-        desc: "Masuk isu RW/kelurahan/kota untuk rute tindak lanjut.",
+        icon: HandHeart,
+        title: "Pelayanan warga yang cepat",
+        desc: "Fokus pada respons cepat, pengawalan keluhan, dan memastikan warga dapat akses layanan dengan jelas.",
+        cta: { label: "Kirim Aspirasi", to: "/aspirasi" },
       },
       {
         icon: ShieldCheck,
-        title: "Kawal",
-        desc: "Dihubungkan ke agenda/program/mitra terkait bila relevan.",
+        title: "Transparansi yang bisa dicek",
+        desc: "Ringkasan kegiatan dibuat rapi: tanggal, lokasi, tujuan, dan progres supaya warga bisa ikut mengawasi.",
+        cta: { label: "Lihat Kinerja", to: "/kinerja" },
+      },
+      {
+        icon: Building2,
+        title: "Penguatan wilayah & RW",
+        desc: "Pemetaan kebutuhan wilayah, kolaborasi perangkat setempat, serta dorong program berbasis kebutuhan nyata.",
+        cta: { label: "Lihat Program", to: "/program" },
       },
       {
         icon: Sparkles,
-        title: "Update",
-        desc: "Status ditampilkan agar warga bisa memantau progresnya.",
+        title: "UMKM & ekonomi lokal",
+        desc: "Dorong kegiatan warga, bazar/kolaborasi, dan jaringan promosi agar ekonomi lingkungan bergerak.",
+        cta: { label: "Lihat Media", to: "/media" },
       },
     ],
     []
   );
 
-  // === GALLERY 12 kartu (pakai 6 foto kamu, di-rotate biar penuh) ===
-  const gallery = useMemo(() => {
-    const base = [
-      { srcs: [IMG.portraitPKB], title: "Potret PKB", cap: "Identitas fraksi & kedekatan dengan warga." },
-      { srcs: [IMG.lapangan], title: "Kegiatan Lapangan", cap: "Serap aspirasi dan penguatan layanan." },
-      { srcs: [IMG.podium], title: "Pemaparan / Forum", cap: "Penyampaian program & informasi publik." },
-      { srcs: [IMG.rapat], title: "Rapat / Koordinasi", cap: "Koordinasi dan pengawalan kebijakan." },
-      { srcs: [IMG.meja], title: "Pelayanan / Kantor", cap: "Kerja administratif dan tindak lanjut." },
-      { srcs: [IMG.bazar], title: "UMKM / Bazar", cap: "Dorong ekonomi lokal dan kolaborasi." },
-    ];
+  // === TIMELINE JEJAK KERJA ===
+  const timeline = useMemo(
+    () => [
+      {
+        icon: CalendarDays,
+        title: "Dengar & Catat",
+        desc: "Aspirasi warga diterima, dicatat rapi, dan dipetakan lokasi/isu agar tidak tercecer.",
+      },
+      {
+        icon: Users,
+        title: "Diskusi Wilayah",
+        desc: "Koordinasi dengan RT/RW/komunitas untuk menajamkan kebutuhan dan prioritas.",
+      },
+      {
+        icon: Building2,
+        title: "Kawal ke Program/Agenda",
+        desc: "Masuk ke jalur yang tepat: kelurahan/kecamatan/kota—atau dibawa ke agenda dewan bila perlu.",
+      },
+      {
+        icon: ShieldCheck,
+        title: "Pantau & Pastikan",
+        desc: "Progres dipantau. Kalau mandek, didorong ulang. Warga tidak dibiarkan menunggu tanpa kabar.",
+      },
+      {
+        icon: BadgeCheck,
+        title: "Update Terbuka",
+        desc: "Info dibuat jelas agar warga bisa mengecek: sudah sampai mana, kendalanya apa, dan next step.",
+      },
+    ],
+    []
+  );
 
-    // bikin 12 item (ulang 6 item)
-    const out = [];
-    for (let i = 0; i < 12; i++) out.push(base[i % base.length]);
-    return out;
-  }, [IMG]);
+  // === FAQ ===
+  const faqs = useMemo(
+    () => [
+      {
+        q: "Kalau saya kirim aspirasi, apa harus lengkap banget?",
+        a: "Minimal tulis lokasi, kategori masalah, dan penjelasan singkat. Kalau ada foto/dokumen/link, sertakan supaya proses verifikasi lebih cepat.",
+      },
+      {
+        q: "Apakah semua aspirasi pasti langsung selesai?",
+        a: "Tidak selalu. Ada yang butuh koordinasi lintas pihak. Tapi prinsipnya: aspirasi tidak dibiarkan “hilang”; statusnya dipantau dan diupdate.",
+      },
+      {
+        q: "Aspirasi saya masuk ke mana?",
+        a: "Tergantung isu: RW/kelurahan/kecamatan/kota. Jika perlu advokasi/kebijakan, bisa dikawal lewat mekanisme dewan sesuai jalur yang tepat.",
+      },
+      {
+        q: "Bagaimana cara cek progresnya?",
+        a: "Gunakan menu Kinerja/Media untuk melihat ringkasan aktivitas dan update. Jika kamu butuh follow-up, bisa lewat menu Kontak atau Aspirasi.",
+      },
+      {
+        q: "Kalau ada dokumen belum siap, bagaimana?",
+        a: "Tidak masalah. Jangan mengarang link/dokumen. Lebih baik kosong dulu, lalu ditambahkan saat tersedia agar data tetap akurat.",
+      },
+      {
+        q: "Kenapa desainnya hijau-kuning?",
+        a: "Itu identitas visual PKB. Tujuannya biar terasa ‘brand’ namun tetap modern, bersih, dan nyaman dibaca.",
+      },
+    ],
+    []
+  );
+
+  const [openFaq, setOpenFaq] = useState(0);
 
   return (
     <section className="mt-6 pb-10">
@@ -553,9 +708,7 @@ export default function Tentang() {
               </p>
 
               <div className="mt-4 rounded-3xl bg-white/70 p-4 ring-1 ring-black/5">
-                <div className="text-sm font-semibold text-[#005A32]">
-                  Wilayah Dapil {profile.dapil}
-                </div>
+                <div className="text-sm font-semibold text-[#005A32]">Wilayah Dapil {profile.dapil}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {profile.area.map((a) => (
                     <span
@@ -576,26 +729,40 @@ export default function Tentang() {
                 <YellowButton onClick={() => navigate("/kinerja")}>Lihat Kinerja</YellowButton>
                 <SecondaryButton onClick={() => navigate("/media")}>Lihat Media</SecondaryButton>
               </div>
+
+              {/* Stat ringkas */}
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-3xl bg-white/80 p-4 ring-1 ring-black/5">
+                  <div className="text-xs font-semibold text-black/55">Wilayah Dapil</div>
+                  <div className="mt-1 text-2xl font-extrabold text-[#005A32]">
+                    <CountUp to={6} />
+                  </div>
+                  <div className="mt-1 text-xs text-black/60">Kecamatan/area utama</div>
+                </div>
+                <div className="rounded-3xl bg-white/80 p-4 ring-1 ring-black/5">
+                  <div className="text-xs font-semibold text-black/55">Prinsip Kerja</div>
+                  <div className="mt-1 text-2xl font-extrabold text-[#005A32]">
+                    <CountUp to={5} />
+                  </div>
+                  <div className="mt-1 text-xs text-black/60">Tahap alur aspirasi</div>
+                </div>
+                <div className="rounded-3xl bg-white/80 p-4 ring-1 ring-black/5">
+                  <div className="text-xs font-semibold text-black/55">Akses Menu</div>
+                  <div className="mt-1 text-2xl font-extrabold text-[#005A32]">
+                    <CountUp to={6} />
+                  </div>
+                  <div className="mt-1 text-xs text-black/60">Beranda–Kontak</div>
+                </div>
+              </div>
             </div>
 
-            {/* Right: Collage (DIISI FOTO KAMU) */}
+            {/* Right: Collage */}
             <div className="reveal" ref={reveal}>
               <div className="grid gap-3 sm:grid-cols-2">
-                <SmartImage
-                  srcs={[IMG.portraitPKB]}
-                  alt="Portrait PKB"
-                  className="h-[180px] sm:h-[220px]"
-                />
-                <SmartImage
-                  srcs={[IMG.podium]}
-                  alt="Podium"
-                  className="h-[180px] sm:h-[220px]"
-                />
-                <SmartImage
-                  srcs={[IMG.rapat]}
-                  alt="Rapat"
-                  className="h-[180px] sm:h-[220px]"
-                />
+                <SmartImage srcs={[IMG.portraitPKB]} alt="Portrait PKB" className="h-[180px] sm:h-[220px]" />
+                <SmartImage srcs={[IMG.podium]} alt="Podium" className="h-[180px] sm:h-[220px]" />
+                <SmartImage srcs={[IMG.rapat]} alt="Rapat" className="h-[180px] sm:h-[220px]" />
+
                 <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[rgba(0,119,68,0.12)] via-white to-[rgba(255,242,18,0.22)] ring-1 ring-black/5">
                   <div className="p-5">
                     <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-[#005A32] ring-1 ring-black/5">
@@ -608,8 +775,8 @@ export default function Tentang() {
                       kuning yang hangat
                     </div>
                     <p className="mt-2 text-sm text-black/70">
-                      Desain dibuat terang & bersih supaya konten mudah dibaca, tapi tetap
-                      “brandable” dengan aksen PKB.
+                      Desain dibuat terang & bersih supaya konten mudah dibaca, tapi tetap “brandable”
+                      dengan aksen PKB.
                     </p>
                     <div className="mt-4 flex gap-2">
                       <span className="h-8 w-8 rounded-2xl bg-[#007744] ring-1 ring-black/5" />
@@ -628,23 +795,21 @@ export default function Tentang() {
 
       {/* SLIDESHOW */}
       <div className="mt-10 reveal" ref={reveal}>
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <div className="text-2xl font-semibold tracking-tight text-[#0a0a0a]">
-              Slideshow Kegiatan
-            </div>
-            <div className="mt-1 text-sm text-black/65">
-              Auto-play + progress + Ken Burns. Sudah pakai foto kamu semua.
-            </div>
-          </div>
-          <button
-            onClick={() => navigate("/aspirasi")}
-            className="hidden sm:inline-flex items-center gap-2 rounded-2xl bg-[#007744] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
-          >
-            Kirim Aspirasi <ArrowRight className="h-4 w-4" />
-          </button>
+        <SectionHeader
+          title="Slideshow Kegiatan"
+          desc="Auto-play + progress + Ken Burns. Sudah pakai foto kamu semua."
+          right={
+            <button
+              onClick={() => navigate("/aspirasi")}
+              className="hidden sm:inline-flex items-center gap-2 rounded-2xl bg-[#007744] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+            >
+              Kirim Aspirasi <ArrowRight className="h-4 w-4" />
+            </button>
+          }
+        />
+        <div className="mt-4">
+          <Slideshow slides={slides} />
         </div>
-        <Slideshow slides={slides} />
       </div>
 
       {/* VALUES */}
@@ -668,12 +833,10 @@ export default function Tentang() {
 
       {/* FOCUS */}
       <div className="mt-12 reveal" ref={reveal}>
-        <div className="text-2xl font-semibold tracking-tight text-[#0a0a0a]">
-          Fokus Pengawalan
-        </div>
-        <div className="mt-2 text-sm text-black/65">
-          Disusun jadi poin yang “kebayang” dampaknya untuk warga.
-        </div>
+        <SectionHeader
+          title="Fokus Pengawalan"
+          desc="Disusun jadi poin yang kebayang dampaknya untuk warga."
+        />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {focus.map((f, i) => (
@@ -715,9 +878,7 @@ export default function Tentang() {
               </div>
             </div>
 
-            <YellowButton onClick={() => navigate("/aspirasi")}>
-              Mulai Kirim Aspirasi
-            </YellowButton>
+            <YellowButton onClick={() => navigate("/aspirasi")}>Mulai Kirim Aspirasi</YellowButton>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -734,51 +895,104 @@ export default function Tentang() {
         </div>
       </div>
 
-      {/* GALLERY GRID (FULL, NO KOSONG) */}
+      {/* ===== RUBRIK PENGGANTI GALLERY ===== */}
       <div className="mt-12 reveal" ref={reveal}>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-2xl font-semibold tracking-tight text-[#0a0a0a]">
-              Galeri Foto
-            </div>
-            <div className="mt-1 text-sm text-black/65">
-              Terisi 12 kartu (pakai foto kamu, diulang rapi biar penuh).
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {gallery.map((g, i) => {
-            const num = String(i + 1).padStart(2, "0");
-            return (
-              <div
-                key={i}
-                className="group overflow-hidden rounded-3xl bg-white/80 ring-1 ring-black/5 shadow-sm"
+        <SectionHeader
+          title="Program & Prioritas"
+          desc="Ringkasan arah kerja. Foto dokumentasi lengkap ada di menu Media."
+          right={
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => navigate("/media")}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white/80 px-4 py-2 text-sm font-semibold text-[#005A32] ring-1 ring-black/5 hover:bg-white"
               >
-                <div className="relative h-44">
-                  <SmartImage
-                    srcs={g.srcs}
-                    alt={`Galeri ${num}`}
-                    className="h-full w-full"
-                    rounded="rounded-none"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-70" />
-                  <div className="absolute left-3 top-3 rounded-full bg-[#FFF212] px-3 py-1 text-[11px] font-extrabold text-[#005A32] shadow-sm">
-                    PKB
-                  </div>
+                Lihat Foto di Media <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          }
+        />
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {priorities.map((p, i) => (
+            <Card key={i} className="relative overflow-hidden">
+              <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[rgba(0,119,68,0.10)] blur-3xl" />
+              <div className="flex items-start gap-3">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[rgba(255,242,18,0.55)] text-[#005A32] ring-1 ring-[#F4E400]/50">
+                  <p.icon className="h-6 w-6" />
                 </div>
-                <div className="p-4">
-                  <div className="text-sm font-semibold text-[#0a0a0a]">
-                    Dokumentasi Kegiatan #{num}
+                <div className="flex-1">
+                  <div className="text-lg font-semibold text-[#0a0a0a]">{p.title}</div>
+                  <div className="mt-1 text-sm text-black/70">{p.desc}</div>
+
+                  <div className="mt-4">
+                    <button
+                      onClick={() => navigate(p.cta.to)}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-[#007744] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+                    >
+                      {p.cta.label} <ArrowRight className="h-4 w-4" />
+                    </button>
                   </div>
-                  <div className="mt-1 text-xs text-black/65">
-                    <span className="font-semibold">{g.title}</span> — {g.cap}
-                  </div>
-                  <div className="mt-3 h-[2px] w-10 bg-[#007744] opacity-60 transition group-hover:w-16" />
                 </div>
               </div>
-            );
-          })}
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* TIMELINE */}
+      <div className="mt-12 reveal" ref={reveal}>
+        <SectionHeader
+          title="Jejak Kerja"
+          desc="Model kerja yang bisa diikuti warga: dari aspirasi masuk sampai update progres."
+        />
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-5">
+          {timeline.map((t, i) => (
+            <div
+              key={i}
+              className="relative overflow-hidden rounded-3xl bg-white/80 p-5 ring-1 ring-black/5 shadow-sm"
+            >
+              <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[rgba(255,242,18,0.18)] blur-3xl" />
+              <div className="flex items-center justify-between">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[rgba(0,119,68,0.10)] text-[#007744]">
+                  <t.icon className="h-6 w-6" />
+                </div>
+                <div className="rounded-full bg-[#FFF212] px-3 py-1 text-[11px] font-extrabold text-[#005A32]">
+                  Step {i + 1}
+                </div>
+              </div>
+              <div className="mt-4 text-sm font-semibold text-[#0a0a0a]">{t.title}</div>
+              <div className="mt-2 text-xs text-black/70">{t.desc}</div>
+              <div className="mt-4 h-[2px] w-12 bg-[#007744] opacity-60" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* FAQ */}
+      <div className="mt-12 reveal" ref={reveal}>
+        <SectionHeader
+          title="FAQ Warga"
+          desc="Pertanyaan yang sering muncul — dibuat singkat & jelas."
+          right={
+            <div className="flex flex-wrap gap-2">
+              <SecondaryButton onClick={() => navigate("/kontak")}>Kontak</SecondaryButton>
+              <PrimaryButton onClick={() => navigate("/aspirasi")}>Kirim Aspirasi</PrimaryButton>
+            </div>
+          }
+        />
+
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          {faqs.map((f, i) => (
+            <div key={i} className="reveal" ref={reveal}>
+              <FAQItem
+                q={f.q}
+                a={f.a}
+                open={openFaq === i}
+                onToggle={() => setOpenFaq((p) => (p === i ? -1 : i))}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -795,18 +1009,14 @@ export default function Tentang() {
                 Punya masukan, usulan, atau aduan?
               </div>
               <div className="mt-2 max-w-2xl text-sm text-black/70">
-                Kirim lewat menu Aspirasi. Jika ada foto/dokumen/link pendukung, sertakan supaya
-                tindak lanjutnya lebih jelas.
+                Kirim lewat menu Aspirasi. Jika ada foto/dokumen/link pendukung, sertakan supaya tindak lanjutnya
+                lebih jelas.
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <PrimaryButton onClick={() => navigate("/aspirasi")}>
-                Kirim Aspirasi
-              </PrimaryButton>
-              <SecondaryButton onClick={() => navigate("/kontak")}>
-                Kontak
-              </SecondaryButton>
+              <PrimaryButton onClick={() => navigate("/aspirasi")}>Kirim Aspirasi</PrimaryButton>
+              <SecondaryButton onClick={() => navigate("/kontak")}>Kontak</SecondaryButton>
             </div>
           </div>
         </div>

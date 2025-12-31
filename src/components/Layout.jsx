@@ -1,8 +1,8 @@
-//src/components/Layout.jsx
+// src/components/Layout.jsx
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
-import AICallCenter from "./components/AICallCenter"; // ✅ tambah ini
+import AICallCenter from "./AICallCenter"; // ✅ FIX: jangan "./components/AICallCenter"
 
 const NAV_ITEMS = [
   { label: "Beranda", to: "/" },
@@ -18,6 +18,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ===== Sliding indicator refs/state
   const navWrapRef = useRef(null);
   const itemRefs = useRef({});
   const [indicator, setIndicator] = useState({ x: 0, w: 0, ready: false });
@@ -70,9 +71,11 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#EAF7EF] via-white to-white text-slate-900">
       <header className="sticky top-0 z-40 border-b border-[#007744]/15 bg-white/85 backdrop-blur">
+        {/* Accent bar */}
         <div className="h-1 w-full bg-gradient-to-r from-[#007744] via-[#0C8C5A] to-[#FFF212]" />
 
         <div className="mx-auto flex max-w-screen-xl items-center justify-between px-3 py-3 sm:px-6 lg:px-8">
+          {/* Brand */}
           <button
             onClick={() => navigate("/")}
             className="flex items-center gap-2 rounded-xl px-2 py-1 text-left hover:bg-[#007744]/5"
@@ -82,16 +85,20 @@ export default function Layout() {
               <span className="text-sm font-extrabold">MS</span>
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-semibold text-slate-900">Mochammad Ulan Surlan</div>
+              <div className="text-sm font-semibold text-slate-900">
+                Mochammad Ulan Surlan
+              </div>
               <div className="text-xs text-slate-600">DPRD Kota Bandung</div>
             </div>
           </button>
 
+          {/* Menu (desktop) */}
           <nav className="hidden md:flex">
             <div
               ref={navWrapRef}
               className="relative flex items-center gap-1 rounded-2xl border border-[#007744]/15 bg-gradient-to-r from-[#EAF7EF] to-white p-1 shadow-sm"
             >
+              {/* Sliding pill indicator */}
               <div
                 aria-hidden="true"
                 className={[
@@ -136,6 +143,7 @@ export default function Layout() {
             </div>
           </nav>
 
+          {/* Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate("/aspirasi")}
@@ -151,6 +159,7 @@ export default function Layout() {
               Admin
             </button>
 
+            {/* Mobile: tombol next */}
             <button
               className="rounded-xl border border-[#007744]/25 bg-white px-3 py-2 text-sm hover:bg-[#EAF7EF] md:hidden"
               onClick={goNext}
@@ -165,13 +174,13 @@ export default function Layout() {
       <main className="mx-auto max-w-screen-xl px-3 sm:px-6 lg:px-8">
         <Outlet />
 
+        {/* ✅ Floating AI Call Center */}
+        <AICallCenter />
+
         <footer className="pb-10 pt-10 text-center text-xs text-slate-500">
           © {new Date().getFullYear()} • Created By Indra Sulanjana.
         </footer>
       </main>
-
-      {/* ✅ Popup AI Call Center muncul di semua menu */}
-      <AICallCenter />
     </div>
   );
 }

@@ -1,6 +1,8 @@
+//src/components/Layout.jsx
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import AICallCenter from "./components/AICallCenter"; // ✅ tambah ini
 
 const NAV_ITEMS = [
   { label: "Beranda", to: "/" },
@@ -16,18 +18,15 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ===== Sliding indicator refs/state
   const navWrapRef = useRef(null);
   const itemRefs = useRef({});
   const [indicator, setIndicator] = useState({ x: 0, w: 0, ready: false });
 
   const activeTo = useMemo(() => {
-    // cari nav yang paling cocok dengan pathname (biar /kinerja ga dianggap /)
     const p = location.pathname || "/";
     const exact = NAV_ITEMS.find((x) => x.to === p);
     if (exact) return exact.to;
 
-    // fallback: cari yang prefix paling panjang
     const candidates = NAV_ITEMS
       .filter((x) => x.to !== "/" && p.startsWith(x.to))
       .sort((a, b) => b.to.length - a.to.length);
@@ -35,10 +34,7 @@ export default function Layout() {
     return candidates[0]?.to || "/";
   }, [location.pathname]);
 
-  const activeIndex = Math.max(
-    0,
-    NAV_ITEMS.findIndex((n) => n.to === activeTo)
-  );
+  const activeIndex = Math.max(0, NAV_ITEMS.findIndex((n) => n.to === activeTo));
 
   const goNext = () => {
     const next = NAV_ITEMS[(activeIndex + 1) % NAV_ITEMS.length];
@@ -48,13 +44,11 @@ export default function Layout() {
   const recalcIndicator = () => {
     const wrap = navWrapRef.current;
     const el = itemRefs.current[activeTo];
-
     if (!wrap || !el) return;
 
     const wrapRect = wrap.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
 
-    // posisi relatif terhadap wrapper
     const x = elRect.left - wrapRect.left;
     const w = elRect.width;
 
@@ -76,11 +70,9 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#EAF7EF] via-white to-white text-slate-900">
       <header className="sticky top-0 z-40 border-b border-[#007744]/15 bg-white/85 backdrop-blur">
-        {/* Accent bar */}
         <div className="h-1 w-full bg-gradient-to-r from-[#007744] via-[#0C8C5A] to-[#FFF212]" />
 
         <div className="mx-auto flex max-w-screen-xl items-center justify-between px-3 py-3 sm:px-6 lg:px-8">
-          {/* Brand */}
           <button
             onClick={() => navigate("/")}
             className="flex items-center gap-2 rounded-xl px-2 py-1 text-left hover:bg-[#007744]/5"
@@ -90,27 +82,22 @@ export default function Layout() {
               <span className="text-sm font-extrabold">MS</span>
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-semibold text-slate-900">
-                Mochammad Ulan Surlan
-              </div>
+              <div className="text-sm font-semibold text-slate-900">Mochammad Ulan Surlan</div>
               <div className="text-xs text-slate-600">DPRD Kota Bandung</div>
             </div>
           </button>
 
-          {/* Menu (desktop) */}
           <nav className="hidden md:flex">
             <div
               ref={navWrapRef}
               className="relative flex items-center gap-1 rounded-2xl border border-[#007744]/15 bg-gradient-to-r from-[#EAF7EF] to-white p-1 shadow-sm"
             >
-              {/* Sliding pill indicator */}
               <div
                 aria-hidden="true"
                 className={[
                   "pointer-events-none absolute top-1 bottom-1 rounded-xl",
                   "bg-[#007744] shadow-[0_10px_25px_rgba(0,119,68,0.25)]",
                   "ring-2 ring-[#FFF212]/70",
-                  // underline/glow kuning di bawah pill
                   "after:content-[''] after:absolute after:left-3 after:right-3 after:-bottom-1",
                   "after:h-[3px] after:rounded-full after:bg-[#FFF212]",
                   "after:shadow-[0_0_12px_rgba(255,242,18,0.70)]",
@@ -149,7 +136,6 @@ export default function Layout() {
             </div>
           </nav>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate("/aspirasi")}
@@ -165,7 +151,6 @@ export default function Layout() {
               Admin
             </button>
 
-            {/* Mobile: tombol next */}
             <button
               className="rounded-xl border border-[#007744]/25 bg-white px-3 py-2 text-sm hover:bg-[#EAF7EF] md:hidden"
               onClick={goNext}
@@ -184,6 +169,9 @@ export default function Layout() {
           © {new Date().getFullYear()} • Created By Indra Sulanjana.
         </footer>
       </main>
+
+      {/* ✅ Popup AI Call Center muncul di semua menu */}
+      <AICallCenter />
     </div>
   );
 }

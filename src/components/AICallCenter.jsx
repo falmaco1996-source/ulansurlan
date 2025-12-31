@@ -1,6 +1,6 @@
+//src/components/AICallCenter.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { createClient } from "@supabase/supabase-js";
 import {
   Bot,
   ExternalLink,
@@ -15,25 +15,7 @@ import {
   MessagesSquare,
   ClipboardList,
 } from "lucide-react";
-
-/**
- * =========================================================
- *  AICallCenter.jsx (Floating Popup)
- *  - Pop-up seperti call center (chat asisten virtual)
- *  - Jawab otomatis (rule-based/FAQ pintar: cepat & offline)
- *  - Bisa di-upgrade ke LLM via endpoint (opsional)
- *
- * Pasang: render <AICallCenter /> di Layout.jsx (lihat script Layout di bawah).
- *
- * OPTIONAL (logging Supabase):
- *  - set env VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY
- *  - buat table ai_chat_logs (opsional)
- *
- * OPTIONAL (LLM):
- *  - set env VITE_AI_ENDPOINT (misal: Edge Function/Backend)
- *  - endpoint menerima POST { message, history } dan balas { reply }
- * =========================================================
- */
+import { supabase } from "../lib/supabaseClient";
 
 const PKB = {
   green: "#007744",
@@ -42,7 +24,7 @@ const PKB = {
 };
 
 const CALL_CENTER = {
-  // GANTI sesuai admin kamu
+  // ✅ GANTI INI untuk nomor admin utama
   whatsappNumber: "6281572054940",
   officeHours: "Setiap hari 08.00–17.00",
 };
@@ -70,7 +52,7 @@ function waLink(text = "") {
   return `https://wa.me/${num}?text=${t}`;
 }
 
-/** ---------- Simple "AI" engine (fast & offline) ---------- */
+/* ================== SIMPLE "AI" (offline FAQ pintar) ================== */
 function normalize(s = "") {
   return String(s).toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -92,18 +74,10 @@ function buildReply(text) {
   const KB = [
     {
       id: "ambulans",
-      keywords: [
-        "ambulans",
-        "ambulance",
-        "gratis",
-        "darurat",
-        "gawat",
-        "rujukan",
-        "evakuasi",
-      ],
+      keywords: ["ambulans", "ambulance", "gratis", "darurat", "gawat", "rujukan", "evakuasi"],
       title: "Program Ambulans Gratis",
       answer:
-        "Program unggulan: **Ambulans Gratis** untuk membantu mobilisasi warga (antar-jemput rujukan/keperluan medis tertentu sesuai ketentuan). Untuk info syarat & alur terbaru, buka menu Program/Media atau hubungi admin.",
+        "Program unggulan: **Ambulans Gratis** untuk membantu mobilisasi warga (antar-jemput rujukan/keperluan medis tertentu sesuai ketentuan). Untuk syarat & alur terbaru, buka menu Program/Media atau hubungi admin.",
       actions: [
         { label: "Buka Program", type: "route", to: "/program" },
         { label: "Lihat Media", type: "route", to: "/media" },
@@ -116,7 +90,7 @@ function buildReply(text) {
     },
     {
       id: "aspirasi",
-      keywords: ["aspirasi", "aduan", "keluhan", "lapor", "usulan", "masukan"],
+      keywords: ["aspirasi", "aduan", "keluhan", "lapor", "usulan", "masukan", "tiket"],
       title: "Kirim Aspirasi / Aduan",
       answer:
         "Kamu bisa kirim aspirasi lewat menu **Aspirasi**. Tips biar cepat diproses: tulis lokasi, kategori, detail singkat, dan tambah foto/link pendukung bila ada.",
@@ -131,10 +105,10 @@ function buildReply(text) {
     },
     {
       id: "kinerja",
-      keywords: ["kinerja", "laporan", "progress", "progres", "agenda", "rapat", "reses"],
+      keywords: ["kinerja", "laporan", "progress", "progres", "agenda", "rapat", "reses", "realtime"],
       title: "Lihat Kinerja & Laporan",
       answer:
-        "Ringkasan kegiatan dan progres bisa kamu lihat di menu **Kinerja**. Kalau kamu sebutkan isu/area, aku bisa arahkan lebih spesifik.",
+        "Ringkasan kegiatan dan progres bisa kamu lihat di menu **Kinerja**. Kalau kamu sebutkan isu/area, aku bisa bantu arahkan lebih spesifik.",
       actions: [
         { label: "Buka Kinerja", type: "route", to: "/kinerja" },
         {
@@ -149,7 +123,7 @@ function buildReply(text) {
       keywords: ["kontak", "alamat", "nomor", "wa", "whatsapp", "telepon", "admin"],
       title: "Kontak Admin",
       answer:
-        "Silakan hubungi admin via WhatsApp. Kalau pesanmu spesifik (lokasi/isu), sertakan detail ya biar cepat ditangani.",
+        "Silakan hubungi admin via WhatsApp. Sertakan detail lokasi/isu supaya cepat ditangani.",
       actions: [
         {
           label: "WhatsApp Admin",
@@ -164,7 +138,7 @@ function buildReply(text) {
       keywords: ["ulan", "surlan", "pkb", "tentang", "profil", "dprd", "dapil"],
       title: "Profil Singkat",
       answer:
-        "Mochammad Ulan Surlan — Anggota DPRD Kota Bandung dari Fraksi PKB. Fokus: aspirasi warga, transparansi progres, penguatan wilayah, dan kolaborasi UMKM/komunitas.",
+        "Mochammad Ulan Surlan — Anggota DPRD Kota Bandung (Fraksi PKB). Fokus: aspirasi warga, transparansi progres, penguatan wilayah, dan kolaborasi UMKM/komunitas.",
       actions: [{ label: "Buka Tentang", type: "route", to: "/tentang" }],
     },
   ];
@@ -197,7 +171,7 @@ function buildReply(text) {
 
   return {
     reply:
-      "Aku bisa bantu arahkan kamu 😊\n\nPilih topik di bawah, atau tulis pertanyaan dengan kata kunci (mis: **aspirasi Coblong**, **ambulans gratis**, **status reses**, **kontak admin**).",
+      "Aku bisa bantu arahkan kamu 😊\n\nKetik kata kunci: **aspirasi**, **ambulans gratis**, **kinerja**, **reses**, atau **kontak admin**.",
     actions: [
       { label: "Aspirasi", type: "route", to: "/aspirasi" },
       { label: "Ambulans Gratis", type: "text", text: "Saya ingin info program ambulans gratis." },
@@ -207,25 +181,30 @@ function buildReply(text) {
   };
 }
 
-/** ---------- Optional Supabase logger ---------- */
-function getSupabase() {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  try {
-    return createClient(url, key);
-  } catch {
-    return null;
-  }
-}
-
-async function safeLog(supabase, payload) {
-  if (!supabase) return;
+/* ================== optional logging (silent if table not exist) ================== */
+async function safeLog(payload) {
   try {
     await supabase.from("ai_chat_logs").insert(payload);
   } catch {
     // silent
   }
+}
+
+function MessageContent({ text }) {
+  const parts = String(text || "").split(/\*\*(.*?)\*\*/g);
+  return (
+    <div className="whitespace-pre-wrap">
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <strong key={i} className="font-extrabold">
+            {p}
+          </strong>
+        ) : (
+          <React.Fragment key={i}>{p}</React.Fragment>
+        )
+      )}
+    </div>
+  );
 }
 
 function Bubble({ role, children }) {
@@ -263,24 +242,6 @@ function ActionButton({ onClick, children, variant = "ghost" }) {
   );
 }
 
-function MessageContent({ text }) {
-  // markdown-lite: **bold**
-  const parts = String(text || "").split(/\*\*(.*?)\*\*/g);
-  return (
-    <div className="whitespace-pre-wrap">
-      {parts.map((p, i) =>
-        i % 2 === 1 ? (
-          <strong key={i} className="font-extrabold">
-            {p}
-          </strong>
-        ) : (
-          <React.Fragment key={i}>{p}</React.Fragment>
-        )
-      )}
-    </div>
-  );
-}
-
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -307,8 +268,6 @@ export default function AICallCenter() {
     return id;
   }, []);
 
-  const supabase = useMemo(() => getSupabase(), []);
-
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem("ai_call_center_messages");
     if (saved) {
@@ -322,7 +281,7 @@ export default function AICallCenter() {
         id: `m_${Date.now()}`,
         role: "assistant",
         content:
-          "Halo! Saya **Asisten Virtual** (AI Call Center) 👋\n\nSaya bisa bantu:\n• cara kirim aspirasi\n• info program Ambulans Gratis\n• arahkan ke kinerja/media/kontak\n\nTulis pertanyaanmu ya 🙂",
+          "Halo! Saya **Asisten Virtual** 👋\n\nSaya bisa bantu:\n• cara kirim aspirasi\n• info **Ambulans Gratis**\n• arahkan ke kinerja/media/kontak\n\nTulis pertanyaanmu ya 🙂",
         ts: Date.now(),
       },
     ];
@@ -338,25 +297,6 @@ export default function AICallCenter() {
     el.scrollTop = el.scrollHeight;
   }, [messages, typing, open]);
 
-  const aiEndpoint = import.meta.env.VITE_AI_ENDPOINT; // optional
-
-  async function getLLMReply(userText, history) {
-    if (!aiEndpoint) return null;
-    try {
-      const r = await fetch(aiEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, history }),
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      if (data?.reply) return String(data.reply);
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
   async function sendMessage(text) {
     const trimmed = String(text || "").trim();
     if (!trimmed) return;
@@ -365,7 +305,7 @@ export default function AICallCenter() {
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
 
-    safeLog(supabase, {
+    safeLog({
       session_id: sessionId,
       role: "user",
       content: trimmed,
@@ -374,26 +314,9 @@ export default function AICallCenter() {
 
     setTyping(true);
 
-    const history = [...messages, userMsg]
-      .slice(-12)
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    let llm = null;
-    if (aiEndpoint) llm = await getLLMReply(trimmed, history);
-
-    let replyText = "";
-    let actions = [];
-    if (llm) {
-      replyText = llm;
-      actions = [
-        { label: "Kirim Aspirasi", type: "route", to: "/aspirasi" },
-        { label: "Hubungi Admin (WA)", type: "wa", text: "Halo Admin, saya butuh bantuan lanjutan dari info AI Call Center." },
-      ];
-    } else {
-      const res = buildReply(trimmed);
-      replyText = res.reply;
-      actions = res.actions || [];
-    }
+    const res = buildReply(trimmed);
+    const replyText = res.reply;
+    const actions = res.actions || [];
 
     const delay = reduced ? 0 : 650;
     setTimeout(() => {
@@ -407,11 +330,11 @@ export default function AICallCenter() {
       setTyping(false);
       setMessages((prev) => [...prev, botMsg]);
 
-      safeLog(supabase, {
+      safeLog({
         session_id: sessionId,
         role: "assistant",
         content: replyText,
-        meta: { actions_count: actions.length, llm: !!llm },
+        meta: { actions_count: actions.length },
       });
     }, delay);
   }
@@ -423,7 +346,7 @@ export default function AICallCenter() {
         id: `m_${Date.now()}`,
         role: "assistant",
         content:
-          "Chat dibersihkan ✅\n\nTulis pertanyaanmu ya 🙂\nContoh: **ambulans gratis**, **kirim aspirasi**, **cek kinerja**, atau **kontak admin**.",
+          "Chat dibersihkan ✅\n\nKetik: **ambulans gratis**, **kirim aspirasi**, **cek kinerja**, atau **kontak admin**.",
         ts: Date.now(),
       },
     ]);
@@ -441,15 +364,14 @@ export default function AICallCenter() {
     }
     if (a.type === "text") {
       setInput(a.text || "");
-      return;
     }
   }
 
   const quick = [
     { label: "Aspirasi", icon: MessagesSquare, action: { type: "route", to: "/aspirasi" } },
-    { label: "Ambulans Gratis", icon: HeartPulse, action: { type: "text", text: "Saya ingin info program ambulans gratis." } },
+    { label: "Ambulans", icon: HeartPulse, action: { type: "text", text: "Saya ingin info program ambulans gratis." } },
     { label: "Kinerja", icon: ClipboardList, action: { type: "route", to: "/kinerja" } },
-    { label: "Kontak Admin", icon: PhoneCall, action: { type: "wa", text: "Halo Admin, saya ingin bertanya. Terima kasih." } },
+    { label: "WA Admin", icon: PhoneCall, action: { type: "wa", text: "Halo Admin, saya butuh bantuan. Terima kasih." } },
   ];
 
   return (
@@ -458,8 +380,9 @@ export default function AICallCenter() {
       <button
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed bottom-4 right-4 z-50 grid h-14 w-14 place-items-center rounded-2xl text-white shadow-[0_18px_35px_rgba(0,119,68,0.28)]",
-          "bg-[#007744] ring-1 ring-[#007744]/30 hover:opacity-95 active:translate-y-[1px]"
+          "fixed bottom-4 right-4 z-50 grid h-14 w-14 place-items-center rounded-2xl text-white",
+          "bg-[#007744] ring-1 ring-[#007744]/30 hover:opacity-95 active:translate-y-[1px]",
+          "shadow-[0_18px_35px_rgba(0,119,68,0.28)]"
         )}
         aria-label="Buka AI Call Center"
       >
@@ -472,7 +395,7 @@ export default function AICallCenter() {
         ) : null}
       </button>
 
-      {/* Panel */}
+      {/* Popup */}
       <AnimatePresence>
         {open ? (
           <motion.div
@@ -483,10 +406,8 @@ export default function AICallCenter() {
             role="dialog"
             aria-modal="true"
           >
-            {/* Backdrop */}
             <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={() => setOpen(false)} />
 
-            {/* Card */}
             <motion.div
               className="relative w-full max-w-[420px] overflow-hidden rounded-3xl border bg-white shadow-2xl"
               initial={{ y: 24, scale: 0.98, opacity: 0 }}
@@ -494,12 +415,10 @@ export default function AICallCenter() {
               exit={{ y: 24, scale: 0.98, opacity: 0 }}
               transition={{ type: "spring", stiffness: 260, damping: 22 }}
             >
-              {/* Top ribbon */}
               <div
                 className="h-1 w-full"
                 style={{
-                  background:
-                    "linear-gradient(90deg, rgba(0,119,68,1), rgba(12,140,90,1), rgba(255,242,18,1))",
+                  background: "linear-gradient(90deg, rgba(0,119,68,1), rgba(12,140,90,1), rgba(255,242,18,1))",
                 }}
               />
 
@@ -516,9 +435,7 @@ export default function AICallCenter() {
                         PKB
                       </span>
                     </div>
-                    <div className="mt-0.5 text-xs text-black/60">
-                      {CALL_CENTER.officeHours} • Auto-reply aktif
-                    </div>
+                    <div className="mt-0.5 text-xs text-black/60">{CALL_CENTER.officeHours} • Auto-reply aktif</div>
                   </div>
                 </div>
 
@@ -541,7 +458,7 @@ export default function AICallCenter() {
                 </div>
               </div>
 
-              {/* Quick actions */}
+              {/* Quick */}
               <div className="px-4 pb-3">
                 <div className="grid grid-cols-2 gap-2">
                   {quick.map((q) => (
@@ -622,7 +539,7 @@ export default function AICallCenter() {
                     <div>
                       <div className="font-semibold text-black/70">Catatan</div>
                       <div className="mt-1">
-                        Ini asisten virtual. Untuk kondisi gawat darurat, segera hubungi layanan darurat setempat (mis. 112/119) atau fasilitas kesehatan terdekat.
+                        Ini asisten virtual. Untuk kondisi gawat darurat, segera hubungi layanan darurat (112/119) atau faskes terdekat.
                       </div>
                     </div>
                   </div>
